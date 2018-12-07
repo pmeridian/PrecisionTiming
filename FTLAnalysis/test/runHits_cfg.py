@@ -46,45 +46,6 @@ options.register('crysLayout',
 options.maxEvents = -1
 options.parseArguments()
 
-
-from Configuration.StandardSequences.Eras import eras
-process = cms.Process('FTLDumpHits',eras.phase2_timing_layer_new)
-
-process.options = cms.untracked.PSet(allowUnscheduled = cms.untracked.bool(True))
-
-process.load('FWCore/MessageService/MessageLogger_cfi')
-process.MessageLogger.cerr.FwkReport.reportEvery = 1
-
-# Global tag
-process.load('Configuration.StandardSequences.FrontierConditions_GlobalTag_cff')
-from Configuration.AlCa.GlobalTag import GlobalTag
-process.GlobalTag = GlobalTag(process.GlobalTag, 'auto:phase2_realistic', '')
-
-# import of standard configurations
-process.maxEvents = cms.untracked.PSet(
-    input = cms.untracked.int32(options.maxEvents)
-)
-
-# Geometry
-if 'tile' in options.crysLayout:
-    process.load('Configuration.Geometry.GeometryExtended2023D24Reco_cff')
-    process.load('Configuration.Geometry.GeometryExtended2023D24_cff')
-if 'barphi' in options.crysLayout:
-    process.load('Configuration.Geometry.GeometryExtended2023D25Reco_cff')
-    process.load('Configuration.Geometry.GeometryExtended2023D25_cff')
-if 'barzflat' in options.crysLayout:
-    process.load('Configuration.Geometry.GeometryExtended2023D35Reco_cff')
-    process.load('Configuration.Geometry.GeometryExtended2023D35_cff')
-    
-process.load('Configuration.StandardSequences.MagneticField_cff')
-process.load('Configuration.StandardSequences.SimIdeal_cff')
-
-process.load("Geometry.MTDNumberingBuilder.mtdNumberingGeometry_cfi")
-process.load("Geometry.MTDNumberingBuilder.mtdTopology_cfi")
-process.load("Geometry.MTDGeometryBuilder.mtdGeometry_cfi")
-process.load("Geometry.MTDGeometryBuilder.mtdParameters_cfi")
-process.mtdGeometry.applyAlignment = cms.bool(False)
-
 files = []
 files2 = []
 for dataset in options.datasets:
@@ -122,38 +83,120 @@ if options.debug:
     for ifile in files:
         print(ifile)
 
-# Input source
-process.source = cms.Source(
-    "PoolSource",
-    fileNames = cms.untracked.vstring(files)
-    )
-process.source.duplicateCheckMode = cms.untracked.string('noDuplicateCheck')
-                            
-process.load('PrecisionTiming.FTLAnalysis.FTLDumpHits_cfi')
-FTLDumper = process.FTLDumpHits
+import FWCore.ParameterSet.Config as cms
 
+from Configuration.StandardSequences.Eras import eras
+
+process = cms.Process('RECO',eras.Phase2_timing_layer_new)
+
+# import of standard configurations
+process.load('Configuration.StandardSequences.Services_cff')
+process.load('SimGeneral.HepPDTESSource.pythiapdt_cfi')
+process.load('FWCore.MessageService.MessageLogger_cfi')
+process.MessageLogger.cerr.FwkReport.reportEvery = 10
+
+process.load('Configuration.EventContent.EventContent_cff')
+process.load('SimGeneral.MixingModule.mixNoPU_cfi')
+# Geometry
 if 'tile' in options.crysLayout:
-    FTLDumper.crysLayout = cms.untracked.int32(1)
+    process.load('Configuration.Geometry.GeometryExtended2023D24Reco_cff')
+    process.load('Configuration.Geometry.GeometryExtended2023D24_cff')
 if 'barphi' in options.crysLayout:
-    FTLDumper.crysLayout = cms.untracked.int32(2)
+    process.load('Configuration.Geometry.GeometryExtended2023D25Reco_cff')
+    process.load('Configuration.Geometry.GeometryExtended2023D25_cff')
 if 'barzflat' in options.crysLayout:
-    FTLDumper.crysLayout = cms.untracked.int32(3)
+    process.load('Configuration.Geometry.GeometryExtended2023D35Reco_cff')
+    process.load('Configuration.Geometry.GeometryExtended2023D35_cff')
+process.load('Configuration.StandardSequences.MagneticField_cff')
+process.load('Configuration.StandardSequences.RawToDigi_cff')
+process.load('Configuration.StandardSequences.L1Reco_cff')
+process.load('Configuration.StandardSequences.Reconstruction_cff')
+process.load('Configuration.StandardSequences.RecoSim_cff')
+process.load('PhysicsTools.PatAlgos.slimming.metFilterPaths_cff')
+process.load('Configuration.StandardSequences.PATMC_cff')
+process.load('Configuration.StandardSequences.Validation_cff')
+process.load('DQMOffline.Configuration.DQMOfflineMC_cff')
+process.load('Configuration.StandardSequences.FrontierConditions_GlobalTag_cff')
 
-# Output TFile
-process.TFileService = cms.Service(
-    "TFileService",
-    fileName = cms.string(options.output)
-    )
+process.load('PrecisionTiming.FTLAnalysis.FTLDumpHits_cfi')
 
-## Track-MC association
-#process.load("SimGeneral.TrackingAnalysis.simHitTPAssociation_cfi")
-#process.load("SimTracker.TrackAssociatorProducers.trackAssociatorByHits_cfi")
-#process.load("SimTracker.TrackAssociation.trackMCMatch_cfi")
-#
-#process.simHitTPAssocProducer.simHitSrc = ["g4SimHits:TrackerHitsPixelBarrelLowTof", "g4SimHits:TrackerHitsPixelEndcapLowTof"]
-#process.trackMCMatch.associator = cms.string('trackAssociatorByHits')
-#process.path = cms.Path(process.simHitTPAssocProducer*process.trackAssociatorByHits*process.trackMCMatch*FTLDumper)
 
-process.path = cms.Path(FTLDumper)
+process.maxEvents = cms.untracked.PSet(
+    input = cms.untracked.int32(options.maxEvents)
+)
 
-process.schedule = cms.Schedule(process.path)
+# Input source
+process.source = cms.Source("PoolSource",
+    fileNames = cms.untracked.vstring(files),
+#    fileNames = cms.untracked.vstring('file:step2.root'),
+    secondaryFileNames = cms.untracked.vstring()
+)
+
+process.options = cms.untracked.PSet(
+
+)
+
+# Production Info
+process.configurationMetadata = cms.untracked.PSet(
+#    annotation = cms.untracked.string('step3 nevts:1000'),
+    name = cms.untracked.string('Applications'),
+    version = cms.untracked.string('$Revision: 1.19 $')
+)
+
+# Output definition
+
+
+# Additional output definition
+
+# Other statements
+process.mix.playback = True
+process.mix.digitizers = cms.PSet()
+for a in process.aliases: delattr(process, a)
+process.RandomNumberGeneratorService.restoreStateLabel=cms.untracked.string("randomEngineStateProducer")
+from Configuration.AlCa.GlobalTag import GlobalTag
+process.GlobalTag = GlobalTag(process.GlobalTag, 'auto:phase2_realistic', '')
+
+process.TFileService = cms.Service("TFileService", 
+    fileName = cms.string(options.output),
+    closeFileFast = cms.untracked.bool(True)
+)
+
+# Path and EndPath definitions
+process.raw2digi_step = cms.Path(process.RawToDigi)
+process.reconstruction_step = cms.Path(process.reconstruction)
+process.recosim_step = cms.Path(process.recosim)
+process.analysis_step = cms.Path(process.FTLDumpHits)
+
+# Schedule definition
+process.schedule = cms.Schedule(process.raw2digi_step,process.reconstruction_step,process.recosim_step,process.analysis_step)
+# customisation of the process.
+
+# Automatic addition of the customisation function from SimGeneral.MixingModule.fullMixCustomize_cff
+from SimGeneral.MixingModule.fullMixCustomize_cff import setCrossingFrameOn 
+
+#call to customisation function setCrossingFrameOn imported from SimGeneral.MixingModule.fullMixCustomize_cff
+process = setCrossingFrameOn(process)
+
+# End of customisation functions
+#do not add changes to your config after this point (unless you know what you are doing)
+from FWCore.ParameterSet.Utilities import convertToUnscheduled
+process=convertToUnscheduled(process)
+
+# customisation of the process.
+
+# Automatic addition of the customisation function from PhysicsTools.PatAlgos.slimming.miniAOD_tools
+from PhysicsTools.PatAlgos.slimming.miniAOD_tools import miniAOD_customizeAllMC 
+
+
+# End of customisation functions
+
+# Customisation from command line
+
+#Have logErrorHarvester wait for the same EDProducers to finish as those providing data for the OutputModule
+from FWCore.Modules.logErrorHarvester_cff import customiseLogErrorHarvesterUsingOutputCommands
+process = customiseLogErrorHarvesterUsingOutputCommands(process)
+
+# Add early deletion of temporary data products to reduce peak memory need
+from Configuration.StandardSequences.earlyDeleteSettings_cff import customiseEarlyDelete
+process = customiseEarlyDelete(process)
+# End adding early deletion

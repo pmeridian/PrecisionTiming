@@ -19,10 +19,12 @@ using namespace std;
 #define DATA_CLASS_TABLE                                                \
   DATA(vector<int>,   track_idx)                                        \
   DATA(vector<float>, track_pt)                                         \
+  DATA(vector<float>, track_p)                                         \
   DATA(vector<float>, track_eta)                                        \
   DATA(vector<float>, track_phi)                                        \
   DATA(vector<float>, track_eta_atBTL)                                  \
   DATA(vector<float>, track_phi_atBTL)                                  \
+  DATA(vector<float>, track_time_atBTL)                                 \
   DATA(vector<float>, track_energy)                                     \
   DATA(vector<float>, track_normalizedChi2)                             \
   DATA(vector<int>,   track_numberOfValidHits)                          \
@@ -33,6 +35,8 @@ using namespace std;
   DATA(vector<float>, track_mcMatch_genEta)                             \
   DATA(vector<float>, track_mcMatch_genPhi)                             \
   DATA(vector<float>, track_mcMatch_DR)                                 \
+  DATA(vector<float>, track_mcMatch_genTime)                             \
+  DATA(vector<float>, track_pathLength)                                 \
   DATA(vector<float>, simHits_energy)                                   \
   DATA(vector<float>, simHits_time)                                     \
   DATA(vector<int>,   simHits_rr)                                       \
@@ -95,6 +99,8 @@ using namespace std;
   DATA(vector, matchedSimHits_crystal,       <vector<int> >)            \
   DATA(vector, matchedSimHits_ieta,          <vector<int> >)            \
   DATA(vector, matchedSimHits_iphi,          <vector<int> >)            \
+  DATA(vector, matchedSimHits_row,          <vector<int> >)            \
+  DATA(vector, matchedSimHits_col,          <vector<int> >)            \
   DATA(vector, matchedSimHits_entry_local_x, <vector<float> >)          \
   DATA(vector, matchedSimHits_entry_local_y, <vector<float> >)          \
   DATA(vector, matchedSimHits_entry_local_z, <vector<float> >)          \

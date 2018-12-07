@@ -31,6 +31,7 @@
 #include "MagneticField/Engine/interface/MagneticField.h"
 #include "MagneticField/Records/interface/IdealMagneticFieldRecord.h"
 #include "TrackPropagation/SteppingHelixPropagator/interface/SteppingHelixPropagator.h"
+#include "TrackingTools/MaterialEffects/interface/PropagatorWithMaterial.h"
 #include "TrackingTools/TrajectoryState/interface/TrajectoryStateOnSurface.h"
 #include "TrackingTools/TrajectoryState/interface/FreeTrajectoryState.h"
 #include "TrackingTools/TrajectoryParametrization/interface/GlobalTrajectoryParameters.h"
@@ -38,6 +39,7 @@
 #include "DataFormats/GeometrySurface/interface/Plane.h"
 #include "DataFormats/GeometrySurface/interface/Cylinder.h"
 
+#include "SimDataFormats/Vertex/interface/SimVertex.h"
 #include "SimDataFormats/TrackingHit/interface/PSimHit.h"
 #include "SimDataFormats/TrackingHit/interface/PSimHitContainer.h"
 
@@ -49,6 +51,7 @@
 #include "DataFormats/GeometrySurface/interface/BoundSurface.h"
 #include "DataFormats/GeometrySurface/interface/MediumProperties.h"
 #include "DataFormats/GeometrySurface/interface/TrapezoidalPlaneBounds.h"
+#include "DataFormats/TrackerRecHit2D/interface/MTDTrackingRecHit.h"
 
 #include "RecoMTD/DetLayers/interface/MTDDetLayerGeometry.h"
 #include "RecoMTD/DetLayers/interface/MTDTrayBarrelLayer.h"
@@ -59,9 +62,22 @@
 
 #include "PrecisionTiming/FTLAnalysis/interface/FTLHitsTree.h"
 
+#include "TrackingTools/PatternTools/interface/Trajectory.h"
+#include "TrackingTools/TransientTrack/interface/TransientTrack.h"
+#include "TrackingTools/TransientTrack/interface/TransientTrackBuilder.h"
+#include "TrackingTools/Records/interface/TransientTrackRecord.h"
+#include "TrackingTools/TransientTrackingRecHit/interface/TransientTrackingRecHit.h"
+#include "RecoMTD/TransientTrackingRecHit/interface/MTDTransientTrackingRecHitBuilder.h"
+#include "TrackingTools/Records/interface/TransientRecHitRecord.h"
+#include "TrackingTools/PatternTools/interface/TSCBLBuilderWithPropagator.h"
+#include "RecoTracker/TransientTrackingRecHit/interface/Traj2TrackHits.h"
+#include "TrackingTools/TrackRefitter/interface/TrackTransformer.h"
+
 using namespace std;
 
+float mmToCm=1./10.;
 
+auto cmp = [](const unsigned one, const unsigned two) -> bool { return one < two; };
 
 class FTLDumpHits : public edm::EDAnalyzer
 {
@@ -93,7 +109,18 @@ private:
   edm::EDGetTokenT<FTLClusterCollection> clustersToken_;    
   edm::EDGetTokenT<edm::View<reco::Track> > tracksToken_;
   edm::Handle<edm::View<reco::Track> > tracksHandle_;
-  
+  edm::Handle<MTDTrackingDetSetVector> tHitsHandle_;
+  edm::EDGetTokenT<MTDTrackingDetSetVector> tHitsToken_;    
+  edm::EDGetTokenT<vector<SimVertex> >                 genVtxToken_;
+  edm::Handle<vector<SimVertex> >                      genVtxHandle_;    
+  edm::EDGetTokenT<reco::BeamSpot> bsToken_;
+  edm::Handle<reco::BeamSpot > bsHandle_; 
+  edm::ESHandle<GlobalTrackingGeometry> gtg;
+  std::unique_ptr<TrackTransformer> theTransformer;
+  std::unique_ptr<MeasurementEstimator> theEstimator;
+  edm::ESHandle<TransientTrackBuilder> builder;
+  edm::ESHandle<TransientTrackingRecHitBuilder> hitbuilder;
+
   //---options
   BTLDetId::CrysLayout crysLayout_;
   double track_hit_DRMax_;
@@ -104,8 +131,6 @@ private:
   FTLHitsTree outTree_;
   edm::Service<TFileService> fs_;  
   
-  //---other
-  MeasurementEstimator* theEstimator;
 };
 
 
@@ -116,12 +141,19 @@ FTLDumpHits::FTLDumpHits(const edm::ParameterSet& pSet):
   recHitsToken_(consumes<FTLRecHitCollection>(pSet.getUntrackedParameter<edm::InputTag>("recHitsTag"))),
   clustersToken_(consumes<FTLClusterCollection>(pSet.getUntrackedParameter<edm::InputTag>("clustersTag"))),
   tracksToken_(consumes<edm::View<reco::Track> >(pSet.getUntrackedParameter<edm::InputTag>("tracksTag"))),
+  tHitsToken_(consumes<MTDTrackingDetSetVector>(pSet.getUntrackedParameter<edm::InputTag>("tHitsTag"))),
+  genVtxToken_(consumes<vector<SimVertex> >(pSet.getUntrackedParameter<edm::InputTag>("genVtxTag"))),    
+  bsToken_(consumes<reco::BeamSpot>(pSet.getUntrackedParameter<edm::InputTag>("bsTag"))),    
   crysLayout_((BTLDetId::CrysLayout)(pSet.getUntrackedParameter<int>("crysLayout"))),
   track_hit_DRMax_(pSet.getParameter<double>("track_hit_DRMax")),
   track_hit_distMax_(pSet.getParameter<double>("track_hit_distMax")),
   verbosity_(pSet.getParameter<bool>("verbosity"))
 {
   outTree_ = FTLHitsTree(pSet.getUntrackedParameter<string>("treeName").c_str(), "FTLHits tree for FTL studies");
+  theTransformer = std::make_unique<TrackTransformer>(pSet.getParameterSet("TrackTransformer"));
+  float theMaxChi2=25.;
+  float theNSigma=3.;
+  theEstimator = std::make_unique<Chi2MeasurementEstimator>(theMaxChi2,theNSigma);
 }
 
 
@@ -130,6 +162,9 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
 {
   outTree_.Reset();
   
+  setup.get<GlobalTrackingGeometryRecord>().get(gtg);
+  theTransformer->setServices(setup);
+
   //---get the MTD geometry
   edm::ESHandle<MTDGeometry> geoHandle;
   setup.get<MTDDigiGeometryRecord>().get(geoHandle);
@@ -141,11 +176,18 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
   //--- get the B field
   edm::ESHandle<MagneticField> theField;
   setup.get<IdealMagneticFieldRecord>().get(theField);
+
+
   PropagationDirection dir(alongMomentum);
   SteppingHelixPropagator* propagator = new SteppingHelixPropagator(theField.product(),dir);
   propagator -> setMaterialMode(false);
   propagator -> setNoErrorPropagation(false);
+
+  PropagatorWithMaterial* propagatorWMa= new PropagatorWithMaterial(anyDirection,0.13957018,theField.product(),1.6,false,0.1,true);
   
+  setup.get<TransientTrackRecord>().get("TransientTrackBuilder", builder);
+  setup.get<TransientRecHitRecord>().get("MTDRecHitBuilder",hitbuilder);
+
   //--- load gen particles
   event.getByToken(genParticlesToken_, genParticlesHandle_);
   auto genParticles = *genParticlesHandle_.product();
@@ -165,18 +207,29 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
   // if(clustersHandle_.isValid())
   auto clusters = *clustersHandle_.product();
   
+  event.getByToken(tHitsToken_, tHitsHandle_);
+  auto mtdTHits = *tHitsHandle_.product();
+
+  event.getByToken(genVtxToken_, genVtxHandle_);    
+  const SimVertex* genPV = NULL;
+  if(genVtxHandle_.isValid())
+    genPV = &(genVtxHandle_.product()->at(0));
+
+  event.getByToken(bsToken_,bsHandle_);
+  const auto& bs = *bsHandle_.product();
+
   //---load tracks
   event.getByToken(tracksToken_,tracksHandle_);
   auto tracks = *tracksHandle_.product();
   
-  
-  
+  int nMods = (crysLayout_ == BTLDetId::CrysLayout::barzflat) ? 14 : 18;
+
   //---fill the tree - simHits
   outTree_.simHits_n = 0;
   for(auto simHit : simHits)
   {
     BTLDetId id = simHit.detUnitId();
-    DetId geoId = BTLDetId(id.mtdSide(),id.mtdRR(),id.module()+14*(id.modType()-1),0,1);
+    DetId geoId = BTLDetId(id.mtdSide(),id.mtdRR(),id.module()+nMods*(id.modType()-1),0,1);
     const auto& det = mtdGeometry_ -> idToDet(geoId);
     const ProxyMTDTopology& topoproxy = static_cast<const ProxyMTDTopology&>(det->topology());
     const RectangularMTDTopology& topo = static_cast<const RectangularMTDTopology&>(topoproxy.specificTopology());
@@ -191,8 +244,8 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
     int ieta = id.ieta(crysLayout_);
     int iphi = id.iphi(crysLayout_);
     
-    LocalPoint lp_entry(simHit.entryPoint().x()/10., simHit.entryPoint().y()/10., simHit.entryPoint().z()/10.);
-    LocalPoint lp_exit ( simHit.exitPoint().x()/10.,  simHit.exitPoint().y()/10.,  simHit.exitPoint().z()/10.);
+    LocalPoint lp_entry(simHit.entryPoint().x()*mmToCm, simHit.entryPoint().y()*mmToCm, simHit.entryPoint().z()*mmToCm);
+    LocalPoint lp_exit ( simHit.exitPoint().x()*mmToCm,  simHit.exitPoint().y()*mmToCm,  simHit.exitPoint().z()*mmToCm);
     GlobalPoint gp_entry = det->toGlobal(topo.pixelToModuleLocalPoint(lp_entry,id.row(topo.nrows()),id.column(topo.nrows())));
     GlobalPoint gp_exit  = det->toGlobal(topo.pixelToModuleLocalPoint(lp_exit,id.row(topo.nrows()),id.column(topo.nrows())));
     
@@ -223,7 +276,7 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
   for(auto recHit : recHits)
   {
     BTLDetId id = recHit.id();
-    DetId geoId = BTLDetId(id.mtdSide(),id.mtdRR(),id.module()+14*(id.modType()-1),0,1);
+    DetId geoId = BTLDetId(id.mtdSide(),id.mtdRR(),id.module()+nMods*(id.modType()-1),0,1);
     const auto& det = mtdGeometry_ -> idToDet(geoId);
     const ProxyMTDTopology& topoproxy = static_cast<const ProxyMTDTopology&>(det->topology());
     const RectangularMTDTopology& topo = static_cast<const RectangularMTDTopology&>(topoproxy.specificTopology());    
@@ -231,7 +284,7 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
     double energy = recHit.energy();
     double time   = recHit.time();
     
-    MeasurementPoint mp(recHit.row(),recHit.column());
+    MeasurementPoint mp(recHit.row()+0.5,recHit.column()+0.5);
     LocalPoint lp = topo.localPosition(mp);
     GlobalPoint gp = det->toGlobal(lp);
     
@@ -265,7 +318,7 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
   for (auto clusIt : clusters)
     {    
       DetId id = clusIt.detId();
-      //    DetId geoId = BTLDetId(id.mtdSide(),id.mtdRR(),id.module()+14*(id.modType()-1),0,1);
+      //    DetId geoId = BTLDetId(id.mtdSide(),id.mtdRR(),id.module()+nMods*(id.modType()-1),0,1);
       const auto& det = mtdGeometry_ -> idToDet(id);
       const ProxyMTDTopology& topoproxy = static_cast<const ProxyMTDTopology&>(det->topology());
       const RectangularMTDTopology& topo = static_cast<const RectangularMTDTopology&>(topoproxy.specificTopology());    
@@ -347,6 +400,7 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
     float genEta = -999.;
     float genPhi = -999.;
     float genPt = -999.;
+    float genTime = -999.;
     for(auto& genPart : genParticles)
     {
       if( genPart.status() != 1 ) continue;
@@ -367,9 +421,12 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
       }
     }
     
+    if (genPV)
+      genTime = genPV->position().t();
     
     outTree_.track_idx -> push_back(idx);
     outTree_.track_pt -> push_back(track.pt());
+    outTree_.track_p -> push_back(track.p());
     outTree_.track_eta -> push_back(track.eta());
     outTree_.track_phi -> push_back(track.phi());
     outTree_.track_energy -> push_back(sqrt(track.momentum().mag2()));
@@ -381,6 +438,7 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
     outTree_.track_mcMatch_genPt -> push_back(genPt);
     outTree_.track_mcMatch_genEta -> push_back(genEta);
     outTree_.track_mcMatch_genPhi -> push_back(genPhi);
+    outTree_.track_mcMatch_genTime -> push_back(genTime);
     outTree_.track_mcMatch_DR -> push_back(DRMin);
         
     if( verbosity_ ) std::cout << "*** track " << iTrack << " / " << tracks.size() << "   pt: " << track.pt() << "   eta: " << track.eta() << "   phi: " << track.phi() << std::endl;
@@ -401,6 +459,8 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
     outTree_.matchedSimHits_crystal->resize(idx+1);
     outTree_.matchedSimHits_ieta->resize(idx+1);
     outTree_.matchedSimHits_iphi->resize(idx+1);
+    outTree_.matchedSimHits_row->resize(idx+1);
+    outTree_.matchedSimHits_col->resize(idx+1);
     outTree_.matchedSimHits_entry_local_x->resize(idx+1);
     outTree_.matchedSimHits_entry_local_y->resize(idx+1);
     outTree_.matchedSimHits_entry_local_z->resize(idx+1);
@@ -468,7 +528,7 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
     GlobalVector vec_outer(track.outerMomentum().x(),track.outerMomentum().y(),track.outerMomentum().z());
     CurvilinearTrajectoryError err_outer(track.outerStateCovariance());
     const FreeTrajectoryState fts_outer(GlobalTrajectoryParameters(vtx_outer,vec_outer,track.charge(),theField.product()),err_outer);
-      
+    
     const Surface::RotationType dummyRot;
     
     std::vector<float> cyl_R;
@@ -532,7 +592,134 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
     }
     if( verbosity_ ) std::cout << "---" << std::endl;
     
+
+
+    //study propagator
+    reco::TransientTrack ttrack(track,theField.product(),gtg);
+    auto trajs = theTransformer->transform(track);
+    auto thits = theTransformer->getTransientRecHits(ttrack);
+    std::cout << "track resulted in " << trajs.size() << " trajectories and " << thits.size() << " hits!" << std::endl;
+    for( const auto& trj : trajs ) {
+      std::cout << "original track chi2: " << trj.chiSquared() 
+		<< " ndof: " << trj.ndof() << std::endl;
+    }
+
+    bool hasMTD = false;
+    TransientTrackingRecHit::ConstRecHitContainer mtdhits;
+    auto tTrack = builder->build(track);
+
+    // try propagation to BTL layers and find compatible hits
+    TrajectoryStateOnSurface tsos = tTrack.outermostMeasurementState();
+    const vector<const DetLayer*>& layers = layerGeo->allBTLLayers();
+
+    for (auto ilay = layers.begin(); ilay!=layers.end(); ++ilay) {
+      const MTDTrayBarrelLayer* layer = (const MTDTrayBarrelLayer*) (*ilay);
+      pair<bool, TrajectoryStateOnSurface> comp = layer->compatible(tsos,*propagatorWMa,*theEstimator);
+      if ( !comp.first )
+	continue;
+      hasMTD = true;
+      vector<DetLayer::DetWithState> compDets = layer->compatibleDets(tsos,*propagatorWMa,*theEstimator);
+      for( const auto& detWithState : compDets ) 
+	{
+	  auto range = mtdTHits.equal_range(detWithState.first->geographicalId(),cmp);
+	  for( auto detitr = range.first; detitr != range.second; ++detitr ) {
+	    auto best = detitr->end();
+	    double best_chi2 = std::numeric_limits<double>::max();
+	    for( auto itr = detitr->begin(); itr != detitr->end(); ++itr ) 
+	      {
+		auto est =  theEstimator->estimate(detWithState.second,*itr);
+		if( est.first && est.second < best_chi2 ) { // just take the best chi2
+		  best = itr;
+		  best_chi2 = est.second;
+		}
+	      }
+	    if( best != detitr->end() ) {
+	      mtdhits.push_back(hitbuilder->build(&*best));
+	    }
+	  }    
+	}     
+    } //end loop btl layers
     
+    hasMTD = mtdhits.size();
+    if (hasMTD)
+      std::cout << "Found MTD matching hits " << mtdhits.size() << std::endl;
+    
+    
+    //bool validpropagation = true;
+    //    double pathlength = 0.;
+    double timeAtBTL=-999.;
+    double pathlength1 = 0.;
+    double bsToFirst = 0.;
+    if (hasMTD)
+      {
+	bool outsideIn = false;
+
+	if (!thits.empty()){
+	  GlobalPoint first = gtg->idToDet(thits.front()->geographicalId())->position();
+	  GlobalPoint last = gtg->idToDet(thits.back()->geographicalId())->position();
+	  
+	  // maybe perp2?
+	  auto rFirst = first.mag2();
+	  auto rLast  = last.mag2();
+	  if(rFirst > rLast) outsideIn = true;
+	}
+	if (!outsideIn)
+	  for( auto& ahit : mtdhits ) thits.push_back(ahit);
+	else
+	  {
+	    std::reverse(mtdhits.begin(),mtdhits.end());
+	    for( auto& ahit : thits ) mtdhits.push_back(ahit);
+	    thits.swap(mtdhits);
+	  }
+	auto trajwithmtd = theTransformer->transform(ttrack,thits);
+	std::cout << "refitting resulted in " << trajwithmtd.size() << " trajectories!" << std::endl;
+
+	outsideIn = false;
+	if (trajwithmtd.front().direction() != alongMomentum)
+	  outsideIn = true;
+
+	TrajectoryStateOnSurface stateForProjectionToBeamLineOnSurface = 
+	  trajwithmtd.front().closestMeasurement(GlobalPoint(bs.x0(),bs.y0(),bs.z0())).updatedState();
+	const FreeTrajectoryState & stateForProjectionToBeamLine=*stateForProjectionToBeamLineOnSurface.freeState();
+	TSCBLBuilderWithPropagator tscblBuilder(*propagatorWMa);
+	TrajectoryStateClosestToBeamLine tscbl = tscblBuilder(stateForProjectionToBeamLine,bs);
+	
+	if (! outsideIn)
+	  {
+	    for (auto it=trajwithmtd.front().measurements().begin(); it!=trajwithmtd.front().measurements().end()-1; ++it) {
+	      
+	      const auto &propresult = propagatorWMa->propagateWithPath(it->updatedState(), (it+1)->updatedState().surface());
+	      double layerpathlength = std::abs(propresult.second);
+	      pathlength1 += layerpathlength;
+	    }
+	    bsToFirst = std::abs(propagatorWMa->propagateWithPath(tscbl.trackStateAtPCA(), trajwithmtd.front().firstMeasurement().updatedState().surface()).second);
+	  }
+	else
+	  {
+	    for (auto it=trajwithmtd.front().measurements().rbegin(); it!=trajwithmtd.front().measurements().rend()-1; ++it) {
+	      
+	      const auto &propresult = propagatorWMa->propagateWithPath(it->updatedState(), (it+1)->updatedState().surface());
+	      double layerpathlength = std::abs(propresult.second);
+	      pathlength1 += layerpathlength;
+	    }
+	    bsToFirst= std::abs(propagatorWMa->propagateWithPath(tscbl.trackStateAtPCA(), trajwithmtd.front().lastMeasurement().updatedState().surface()).second);
+	  }
+
+	std::cout << "bsToFirst " << bsToFirst << std::endl;
+	pathlength1 += bsToFirst ;
+
+	for (auto it=trajwithmtd.front().measurements().begin(); it!=trajwithmtd.front().measurements().end(); ++it) {
+	  if (it->recHit()->geographicalId().det() == DetId::Forward && ForwardSubdetector(it->recHit()->geographicalId().subdetId()) == FastTime)
+	    {
+	      const MTDTrackingRecHit *mtdhit = static_cast<const MTDTrackingRecHit*>(it->recHit()->hit());
+	      // if (mtdhit->time()<timeAtBTL)
+	      timeAtBTL = mtdhit->time();
+	      std::cout << "timeAtBTL " << timeAtBTL << std::endl; 
+	    }
+	}
+      }
+    outTree_.track_pathLength-> push_back(pathlength1);
+    outTree_.track_time_atBTL-> push_back(timeAtBTL);
     /*
     //---get compatible layers
     const vector<const DetLayer*>& layers = layerGeo -> allBTLLayers();
@@ -584,7 +771,7 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
     for(auto simHit : simHits)
     {
       BTLDetId id = simHit.detUnitId();
-      DetId geoId = BTLDetId(id.mtdSide(),id.mtdRR(),id.module()+14*(id.modType()-1),0,1);
+      DetId geoId = BTLDetId(id.mtdSide(),id.mtdRR(),id.module()+nMods*(id.modType()-1),0,1);
       const auto& det = mtdGeometry_ -> idToDet(geoId);
       const ProxyMTDTopology& topoproxy = static_cast<const ProxyMTDTopology&>(det->topology());
       const RectangularMTDTopology& topo = static_cast<const RectangularMTDTopology&>(topoproxy.specificTopology());
@@ -598,10 +785,12 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
       int crystal = id.crystal();
       int ieta = id.ieta(crysLayout_);
       int iphi = id.iphi(crysLayout_);
-      
-      LocalPoint lp_entry(   simHit.entryPoint().x()/10.,   simHit.entryPoint().y()/10.,   simHit.entryPoint().z()/10.);
-      LocalPoint lp_mid  (simHit.localPosition().x()/10.,simHit.localPosition().y()/10.,simHit.localPosition().z()/10.);
-      LocalPoint lp_exit (    simHit.exitPoint().x()/10.,    simHit.exitPoint().y()/10.,    simHit.exitPoint().z()/10.);
+      int row=id.row(topo.nrows());
+      int col=id.column(topo.nrows());
+
+      LocalPoint lp_entry(   simHit.entryPoint().x()*mmToCm,   simHit.entryPoint().y()*mmToCm,   simHit.entryPoint().z()*mmToCm);
+      LocalPoint lp_mid  (simHit.localPosition().x()*mmToCm,simHit.localPosition().y()*mmToCm,simHit.localPosition().z()*mmToCm);
+      LocalPoint lp_exit (    simHit.exitPoint().x()*mmToCm,    simHit.exitPoint().y()*mmToCm,    simHit.exitPoint().z()*mmToCm);
       GlobalPoint gp_entry = det->toGlobal(topo.pixelToModuleLocalPoint(lp_entry,id.row(topo.nrows()),id.column(topo.nrows())));
       GlobalPoint gp_mid   = det->toGlobal(topo.pixelToModuleLocalPoint(lp_mid,id.row(topo.nrows()),id.column(topo.nrows())));
       GlobalPoint gp_exit  = det->toGlobal(topo.pixelToModuleLocalPoint(lp_exit,id.row(topo.nrows()),id.column(topo.nrows())));
@@ -645,6 +834,8 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
       outTree_.matchedSimHits_crystal->at(idx).push_back(crystal);
       outTree_.matchedSimHits_ieta->at(idx).push_back(ieta);
       outTree_.matchedSimHits_iphi->at(idx).push_back(iphi);
+      outTree_.matchedSimHits_row->at(idx).push_back(row);
+      outTree_.matchedSimHits_col->at(idx).push_back(col);
       outTree_.matchedSimHits_entry_local_x->at(idx).push_back(lp_entry.x());
       outTree_.matchedSimHits_entry_local_y->at(idx).push_back(lp_entry.y());
       outTree_.matchedSimHits_entry_local_z->at(idx).push_back(lp_entry.z());
@@ -653,8 +844,8 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
       outTree_.matchedSimHits_exit_local_y->at(idx).push_back(lp_exit.y());
       outTree_.matchedSimHits_exit_local_z->at(idx).push_back(lp_exit.z());
       outTree_.matchedSimHits_exit_global_R->at(idx).push_back(sqrt(gp_exit.perp2()));
-      outTree_.matchedSimHits_track_Deta->at(idx).push_back(fabs(Deta));
-      outTree_.matchedSimHits_track_Dphi->at(idx).push_back(fabs(Dphi));
+      outTree_.matchedSimHits_track_Deta->at(idx).push_back(Deta);
+      outTree_.matchedSimHits_track_Dphi->at(idx).push_back(Dphi);
       outTree_.matchedSimHits_track_DR->at(idx).push_back(DR);
       outTree_.matchedSimHits_track_Dz->at(idx).push_back(Dz);
       outTree_.matchedSimHits_track_RDphi->at(idx).push_back(RDphi);
@@ -673,7 +864,7 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
     for(auto recHit : recHits)
     {
       BTLDetId id = recHit.id();
-      DetId geoId = BTLDetId(id.mtdSide(),id.mtdRR(),id.module()+14*(id.modType()-1),0,1);
+      DetId geoId = BTLDetId(id.mtdSide(),id.mtdRR(),id.module()+nMods*(id.modType()-1),0,1);
       const auto& det = mtdGeometry_ -> idToDet(geoId);
       const ProxyMTDTopology& topoproxy = static_cast<const ProxyMTDTopology&>(det->topology());
       const RectangularMTDTopology& topo = static_cast<const RectangularMTDTopology&>(topoproxy.specificTopology());    
@@ -681,7 +872,7 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
       double energy = recHit.energy();
       double time   = recHit.time();
       
-      MeasurementPoint mp(id.row(topo.nrows()),id.column(topo.nrows()));
+      MeasurementPoint mp(id.row(topo.nrows())+0.5,id.column(topo.nrows())+0.5);
       LocalPoint lp = topo.localPosition(mp);
       GlobalPoint gp = det->toGlobal(lp);
 
@@ -734,8 +925,8 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
       outTree_.matchedRecHits_local_y->at(idx).push_back(lp.y());
       outTree_.matchedRecHits_local_z->at(idx).push_back(lp.z());
       outTree_.matchedRecHits_global_R->at(idx).push_back(sqrt(gp.perp2()));
-      outTree_.matchedRecHits_track_Deta->at(idx).push_back(fabs(Deta));
-      outTree_.matchedRecHits_track_Dphi->at(idx).push_back(fabs(Dphi));
+      outTree_.matchedRecHits_track_Deta->at(idx).push_back(Deta);
+      outTree_.matchedRecHits_track_Dphi->at(idx).push_back(Dphi);
       outTree_.matchedRecHits_track_Dz->at(idx).push_back(Dz);
       outTree_.matchedRecHits_track_RDphi->at(idx).push_back(RDphi);
       outTree_.matchedRecHits_track_DR->at(idx).push_back(DR);
@@ -757,7 +948,7 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
     for (auto clusIt : clusters)
       {    
 	DetId id = clusIt.detId();
-	//    DetId geoId = BTLDetId(id.mtdSide(),id.mtdRR(),id.module()+14*(id.modType()-1),0,1);
+	//    DetId geoId = BTLDetId(id.mtdSide(),id.mtdRR(),id.module()+nMods*(id.modType()-1),0,1);
 	const auto& det = mtdGeometry_ -> idToDet(id);
 	const ProxyMTDTopology& topoproxy = static_cast<const ProxyMTDTopology&>(det->topology());
 	const RectangularMTDTopology& topo = static_cast<const RectangularMTDTopology&>(topoproxy.specificTopology());    
@@ -839,8 +1030,8 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
 	    outTree_.matchedClusters_local_y->at(idx).push_back(lp.y());
 	    outTree_.matchedClusters_local_z->at(idx).push_back(lp.z());
 	    outTree_.matchedClusters_global_R->at(idx).push_back(sqrt(gp.perp2()));
-	    outTree_.matchedClusters_track_Deta->at(idx).push_back(fabs(Deta));
-	    outTree_.matchedClusters_track_Dphi->at(idx).push_back(fabs(Dphi));
+	    outTree_.matchedClusters_track_Deta->at(idx).push_back(Deta);
+	    outTree_.matchedClusters_track_Dphi->at(idx).push_back(Dphi);
 	    outTree_.matchedClusters_track_Dz->at(idx).push_back(Dz);
 	    outTree_.matchedClusters_track_RDphi->at(idx).push_back(RDphi);
 	    outTree_.matchedClusters_track_DR->at(idx).push_back(DR);
