@@ -22,6 +22,9 @@ using namespace std;
   DATA(vector<float>, track_p)                                         \
   DATA(vector<float>, track_eta)                                        \
   DATA(vector<float>, track_phi)                                        \
+  DATA(vector<float>, track_x)                                        \
+  DATA(vector<float>, track_y)                                        \
+  DATA(vector<float>, track_z)                                        \
   DATA(vector<float>, track_eta_atBTL)                                  \
   DATA(vector<float>, track_phi_atBTL)                                  \
   DATA(vector<float>, track_time_atBTL)                                 \
@@ -29,6 +32,14 @@ using namespace std;
   DATA(vector<float>, track_normalizedChi2)                             \
   DATA(vector<int>,   track_numberOfValidHits)                          \
   DATA(vector<int>,   track_numberOfLostHits)                           \
+  DATA(vector<float>, track_mtdrefit_pt)                                         \
+  DATA(vector<float>, track_mtdrefit_p)                                         \
+  DATA(vector<float>, track_mtdrefit_eta)                                        \
+  DATA(vector<float>, track_mtdrefit_phi)                                        \
+  DATA(vector<float>, track_mtdrefit_normalizedChi2)                             \
+  DATA(vector<float>, track_mtdrefit_x)                                        \
+  DATA(vector<float>, track_mtdrefit_y)                                        \
+  DATA(vector<float>, track_mtdrefit_z)                                        \
   DATA(vector<int>,   track_isHighPurity)                               \
   DATA(vector<float>, track_mcMatch_genPdgId)                           \
   DATA(vector<float>, track_mcMatch_genPt)                              \
@@ -36,7 +47,11 @@ using namespace std;
   DATA(vector<float>, track_mcMatch_genPhi)                             \
   DATA(vector<float>, track_mcMatch_DR)                                 \
   DATA(vector<float>, track_mcMatch_genTime)                             \
+  DATA(vector<float>, track_mcMatch_genX)                             \
+  DATA(vector<float>, track_mcMatch_genY)                             \
+  DATA(vector<float>, track_mcMatch_genZ)                             \
   DATA(vector<float>, track_pathLength)                                 \
+  DATA(vector<float>, track_pathLength2)                                 \
   DATA(vector<float>, simHits_energy)                                   \
   DATA(vector<float>, simHits_time)                                     \
   DATA(vector<int>,   simHits_rr)                                       \

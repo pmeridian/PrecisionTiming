@@ -2,7 +2,7 @@ import ROOT as R
 import math as M
 from operator import itemgetter
 
-f=R.TFile("/tmp/DumpHits_sm10_2.root")
+f=R.TFile("/eos/cms/store/caf/user/meridian/MTD/10_4_0_mtd2_test/SinglePi_FlatPt_BTL_tile/DumpHits_singlePi.root")
 
 dh=f.Get("DumpHits")
 
@@ -55,9 +55,10 @@ for event in dh:
         histos["cluster_sizeY"].Fill(event.clusters_size_y[iclus])
         histos["cluster_seedEnergyRatio"].Fill(event.clusters_seed_energy[iclus]/event.clusters_energy[iclus])
     for itrack in range(0,len(event.track_idx)):
+        print event.matchedClusters_n[itrack]
         histos["track_pt"].Fill(event.track_pt[itrack])
-        histos["track_eta"].Fill(abs(event.track_eta_atBTL[itrack]))
-        histos["track_phi"].Fill(event.track_phi_atBTL[itrack])
+#        histos["track_eta"].Fill(abs(event.track_eta_atBTL[itrack]))
+#        histos["track_phi"].Fill(event.track_phi_atBTL[itrack])
         histos["matchedTrack_nCluster"].Fill(event.matchedClusters_n[itrack])
         histos["matchedTrack_nHits"].Fill(event.matchedRecHits_n[itrack])
         firstSimHit=-1
@@ -104,7 +105,8 @@ for event in dh:
                 histos["matchedMultipleCluster_local_z"].Fill(event.matchedSimHits_entry_local_z[itrack][firstSimHit])
                 histos["matchedMultipleCluster_row"].Fill(event.matchedSimHits_row[itrack][firstSimHit])
                 histos["matchedMultipleCluster_col"].Fill(event.matchedSimHits_col[itrack][firstSimHit])
-
+        if (firstSimHit!=-1 and event.matchedClusters_n[itrack]>0):
+            print event.matchedClusters_time[itrack][0]-event.matchedSimHits_entry_time[itrack][firstSimHit]
         for iclus in range(0,event.matchedClusters_n[itrack]):
             histos["matchedCluster_energy"].Fill(event.matchedClusters_energy[itrack][iclus])
             histos["matchedCluster_time"].Fill(event.matchedClusters_time[itrack][iclus])

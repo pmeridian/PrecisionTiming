@@ -86,8 +86,9 @@ if options.debug:
 import FWCore.ParameterSet.Config as cms
 
 from Configuration.StandardSequences.Eras import eras
-
-process = cms.Process('RECO',eras.Phase2_timing_layer_new)
+if 'tile' in options.crysLayout:
+    myera=eras.Phase2_timing_layer_tile
+process = cms.Process('RERECO',myera)
 
 # import of standard configurations
 process.load('Configuration.StandardSequences.Services_cff')

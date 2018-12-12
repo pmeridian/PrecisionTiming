@@ -422,13 +422,27 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
     }
     
     if (genPV)
-      genTime = genPV->position().t();
-    
+      {
+	genTime = genPV->position().t();
+        outTree_.track_mcMatch_genX -> push_back(genPV->position().x());
+        outTree_.track_mcMatch_genY -> push_back(genPV->position().y());
+        outTree_.track_mcMatch_genZ -> push_back(genPV->position().z());
+      }
+    else
+      {
+	outTree_.track_mcMatch_genX -> push_back(-999.);
+        outTree_.track_mcMatch_genY -> push_back(-999.);
+        outTree_.track_mcMatch_genZ -> push_back(-999.);
+      }
     outTree_.track_idx -> push_back(idx);
     outTree_.track_pt -> push_back(track.pt());
     outTree_.track_p -> push_back(track.p());
     outTree_.track_eta -> push_back(track.eta());
     outTree_.track_phi -> push_back(track.phi());
+    outTree_.track_x -> push_back(track.vx());
+    outTree_.track_y -> push_back(track.vy());
+    outTree_.track_z -> push_back(track.vz());
+
     outTree_.track_energy -> push_back(sqrt(track.momentum().mag2()));
     outTree_.track_normalizedChi2 -> push_back(track.normalizedChi2());
     outTree_.track_numberOfValidHits -> push_back(track.numberOfValidHits());
@@ -524,94 +538,91 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
     outTree_.matchedClusters_track_dist->resize(idx+1);
         
     // track extrapolation
-    const GlobalPoint vtx_outer(track.outerPosition().x(),track.outerPosition().y(),track.outerPosition().z());
-    GlobalVector vec_outer(track.outerMomentum().x(),track.outerMomentum().y(),track.outerMomentum().z());
-    CurvilinearTrajectoryError err_outer(track.outerStateCovariance());
-    const FreeTrajectoryState fts_outer(GlobalTrajectoryParameters(vtx_outer,vec_outer,track.charge(),theField.product()),err_outer);
-    
     const Surface::RotationType dummyRot;
-    
     std::vector<float> cyl_R;
     if( (crysLayout_ == BTLDetId::CrysLayout::tile) )
-    {
-      cyl_R.push_back(117.450);
-      cyl_R.push_back(117.456);
-      cyl_R.push_back(117.473);
-      cyl_R.push_back(117.501);
-      cyl_R.push_back(117.540);
-      cyl_R.push_back(117.590);
-      cyl_R.push_back(117.653);
-      cyl_R.push_back(117.723);
-      cyl_R.push_back(117.810);
-    }
+      {
+	cyl_R.push_back(117.450);
+	cyl_R.push_back(117.456);
+	cyl_R.push_back(117.473);
+	cyl_R.push_back(117.501);
+	cyl_R.push_back(117.540);
+	cyl_R.push_back(117.590);
+	cyl_R.push_back(117.653);
+	cyl_R.push_back(117.723);
+	cyl_R.push_back(117.810);
+      }
     if( crysLayout_ == BTLDetId::CrysLayout::bar )
-    {
-      cyl_R.push_back(117.450);
-      cyl_R.push_back(117.541);
-      cyl_R.push_back(117.812);
-    }
+      {
+	cyl_R.push_back(117.450);
+	cyl_R.push_back(117.541);
+	cyl_R.push_back(117.812);
+      }
     if( crysLayout_ == BTLDetId::CrysLayout::barzflat )
-    {
-      cyl_R.push_back(117.450);
-      cyl_R.push_back(117.450); cyl_R.push_back(117.451); cyl_R.push_back(117.453); cyl_R.push_back(117.456); cyl_R.push_back(117.459); cyl_R.push_back(117.462); cyl_R.push_back(117.467); cyl_R.push_back(117.473);
-      cyl_R.push_back(117.479); cyl_R.push_back(117.485); cyl_R.push_back(117.493); cyl_R.push_back(117.500); cyl_R.push_back(117.510); cyl_R.push_back(117.519); cyl_R.push_back(117.530); cyl_R.push_back(117.540);
-      cyl_R.push_back(117.552); cyl_R.push_back(117.565); cyl_R.push_back(117.578); cyl_R.push_back(117.591); cyl_R.push_back(117.606); cyl_R.push_back(117.621); cyl_R.push_back(117.637); cyl_R.push_back(117.654);
-      cyl_R.push_back(117.671); cyl_R.push_back(117.689); cyl_R.push_back(117.708); cyl_R.push_back(117.727); cyl_R.push_back(117.747); cyl_R.push_back(117.768); cyl_R.push_back(117.789); cyl_R.push_back(117.812);
-    }
-    
-    int cylIt = 0;
-    std::map<int,GlobalPoint> gp_ext;
-    for(auto val : cyl_R)
-    {
-      Cylinder::ConstCylinderPointer theTargetCylinder = Cylinder::build(val,Surface::PositionType(0.,0.,0.),dummyRot);
-      
-      std::pair<TrajectoryStateOnSurface,double> aTsosPath_outer(propagator->propagateWithPath(fts_outer,*theTargetCylinder));
-      gp_ext[cylIt] = GlobalPoint(0.,0.,0.);
-      if( aTsosPath_outer.first.isValid() )
       {
-        GlobalPoint temp(aTsosPath_outer.first.globalPosition().x(),aTsosPath_outer.first.globalPosition().y(),aTsosPath_outer.first.globalPosition().z());
-        gp_ext[cylIt] = GlobalPoint(temp);
-        if( verbosity_ ) std::cout << "*** track extrapolation: " << PrintPosition(temp) << std::endl;
-        
-        if( cylIt == 0 )
-        {
-          outTree_.track_eta_atBTL -> push_back(gp_ext[cylIt].eta());
-          outTree_.track_phi_atBTL -> push_back(gp_ext[cylIt].phi());
-        }
+	cyl_R.push_back(117.450);
+	cyl_R.push_back(117.450); cyl_R.push_back(117.451); cyl_R.push_back(117.453); cyl_R.push_back(117.456); cyl_R.push_back(117.459); cyl_R.push_back(117.462); cyl_R.push_back(117.467); cyl_R.push_back(117.473);
+	cyl_R.push_back(117.479); cyl_R.push_back(117.485); cyl_R.push_back(117.493); cyl_R.push_back(117.500); cyl_R.push_back(117.510); cyl_R.push_back(117.519); cyl_R.push_back(117.530); cyl_R.push_back(117.540);
+	cyl_R.push_back(117.552); cyl_R.push_back(117.565); cyl_R.push_back(117.578); cyl_R.push_back(117.591); cyl_R.push_back(117.606); cyl_R.push_back(117.621); cyl_R.push_back(117.637); cyl_R.push_back(117.654);
+	cyl_R.push_back(117.671); cyl_R.push_back(117.689); cyl_R.push_back(117.708); cyl_R.push_back(117.727); cyl_R.push_back(117.747); cyl_R.push_back(117.768); cyl_R.push_back(117.789); cyl_R.push_back(117.812);
       }
-      else
-      {
-        if( cylIt == 0 )
-        {
-          outTree_.track_eta_atBTL -> push_back(-999.);
-          outTree_.track_phi_atBTL -> push_back(-999.);
-        }
-      }
-      
-      ++cylIt;
-    }
-    if( verbosity_ ) std::cout << "---" << std::endl;
     
-
-
-    //study propagator
+    //study propagator and track refitting
     reco::TransientTrack ttrack(track,theField.product(),gtg);
     auto trajs = theTransformer->transform(track);
     auto thits = theTransformer->getTransientRecHits(ttrack);
-    std::cout << "track resulted in " << trajs.size() << " trajectories and " << thits.size() << " hits!" << std::endl;
+
     for( const auto& trj : trajs ) {
       std::cout << "original track chi2: " << trj.chiSquared() 
 		<< " ndof: " << trj.ndof() << std::endl;
     }
 
+    int cylIt = 0;
+    std::map<int,GlobalPoint> gp_ext;
+
+    for(auto val : cyl_R)
+      {
+	Cylinder::ConstCylinderPointer theTargetCylinder = Cylinder::build(val,Surface::PositionType(0.,0.,0.),dummyRot);
+	
+	std::pair<TrajectoryStateOnSurface,double> aTsosPath_outer;
+	if (trajs.front().direction() == alongMomentum )
+	  aTsosPath_outer=propagator->propagateWithPath(trajs.front().lastMeasurement().updatedState(),(*theTargetCylinder));
+	else
+	  aTsosPath_outer=propagator->propagateWithPath(trajs.front().firstMeasurement().updatedState(),(*theTargetCylinder));
+	
+	gp_ext[cylIt] = GlobalPoint(0.,0.,0.);
+	if( aTsosPath_outer.first.isValid() )
+	  {
+	    GlobalPoint temp(aTsosPath_outer.first.globalPosition().x(),aTsosPath_outer.first.globalPosition().y(),aTsosPath_outer.first.globalPosition().z());
+	    gp_ext[cylIt] = GlobalPoint(temp);
+	    if( verbosity_ ) std::cout << "*** track extrapolation: " << PrintPosition(temp) << std::endl;
+	    
+	    if( cylIt == 0 )
+	      {
+		outTree_.track_eta_atBTL -> push_back(gp_ext[cylIt].eta());
+		outTree_.track_phi_atBTL -> push_back(gp_ext[cylIt].phi());
+	      }
+	  }
+	else
+	  {
+	    if( cylIt == 0 )
+	      {
+		outTree_.track_eta_atBTL -> push_back(-999.);
+		outTree_.track_phi_atBTL -> push_back(-999.);
+	      }
+	  }
+      
+	++cylIt;
+      }
+    
     bool hasMTD = false;
     TransientTrackingRecHit::ConstRecHitContainer mtdhits;
     auto tTrack = builder->build(track);
-
+    
     // try propagation to BTL layers and find compatible hits
     TrajectoryStateOnSurface tsos = tTrack.outermostMeasurementState();
     const vector<const DetLayer*>& layers = layerGeo->allBTLLayers();
-
+    
     for (auto ilay = layers.begin(); ilay!=layers.end(); ++ilay) {
       const MTDTrayBarrelLayer* layer = (const MTDTrayBarrelLayer*) (*ilay);
       pair<bool, TrajectoryStateOnSurface> comp = layer->compatible(tsos,*propagatorWMa,*theEstimator);
@@ -643,13 +654,20 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
     hasMTD = mtdhits.size();
     if (hasMTD)
       std::cout << "Found MTD matching hits " << mtdhits.size() << std::endl;
-    
-    
+        
     //bool validpropagation = true;
     //    double pathlength = 0.;
     double timeAtBTL=-999.;
     double pathlength1 = 0.;
-    double bsToFirst = 0.;
+    double pathlength2 = 0.;
+    double bsToFirst1 = 0.;
+    double bsToFirst2 = 0.;
+    double lastToMTD=0.;
+
+    reco::Track refitTrack;
+    math::XYZPoint  refit_pos( 0, 0. ,0. );
+    math::XYZVector  refit_mom( 0, 0. ,0. );
+
     if (hasMTD)
       {
 	bool outsideIn = false;
@@ -663,6 +681,7 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
 	  auto rLast  = last.mag2();
 	  if(rFirst > rLast) outsideIn = true;
 	}
+
 	if (!outsideIn)
 	  for( auto& ahit : mtdhits ) thits.push_back(ahit);
 	else
@@ -674,40 +693,58 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
 	auto trajwithmtd = theTransformer->transform(ttrack,thits);
 	std::cout << "refitting resulted in " << trajwithmtd.size() << " trajectories!" << std::endl;
 
-	outsideIn = false;
-	if (trajwithmtd.front().direction() != alongMomentum)
-	  outsideIn = true;
+	TSCBLBuilderWithPropagator tscblBuilder(*propagatorWMa);	  
 
 	TrajectoryStateOnSurface stateForProjectionToBeamLineOnSurface = 
 	  trajwithmtd.front().closestMeasurement(GlobalPoint(bs.x0(),bs.y0(),bs.z0())).updatedState();
-	const FreeTrajectoryState & stateForProjectionToBeamLine=*stateForProjectionToBeamLineOnSurface.freeState();
-	TSCBLBuilderWithPropagator tscblBuilder(*propagatorWMa);
-	TrajectoryStateClosestToBeamLine tscbl = tscblBuilder(stateForProjectionToBeamLine,bs);
+	TrajectoryStateClosestToBeamLine tscbl = tscblBuilder(*stateForProjectionToBeamLineOnSurface.freeState(),bs);
+
+	TrajectoryStateOnSurface stateForProjectionToBeamLineOnSurface_ori = 
+	  trajs.front().closestMeasurement(GlobalPoint(bs.x0(),bs.y0(),bs.z0())).updatedState();
+	TrajectoryStateClosestToBeamLine tscbl_ori = tscblBuilder(*stateForProjectionToBeamLineOnSurface_ori.freeState(),bs);
 	
-	if (! outsideIn)
+	if (trajwithmtd.front().direction() == alongMomentum)
 	  {
-	    for (auto it=trajwithmtd.front().measurements().begin(); it!=trajwithmtd.front().measurements().end()-1; ++it) {
-	      
-	      const auto &propresult = propagatorWMa->propagateWithPath(it->updatedState(), (it+1)->updatedState().surface());
-	      double layerpathlength = std::abs(propresult.second);
-	      pathlength1 += layerpathlength;
-	    }
-	    bsToFirst = std::abs(propagatorWMa->propagateWithPath(tscbl.trackStateAtPCA(), trajwithmtd.front().firstMeasurement().updatedState().surface()).second);
+	    for (auto it=trajwithmtd.front().measurements().begin(); it!=trajwithmtd.front().measurements().end()-1; ++it) 
+	      {
+		const auto &propresult = propagatorWMa->propagateWithPath(it->updatedState(), (it+1)->updatedState().surface());
+		double layerpathlength = std::abs(propresult.second);
+		pathlength1 += layerpathlength;
+	      }
+	    bsToFirst1 = std::abs(propagatorWMa->propagateWithPath(tscbl.trackStateAtPCA(), trajwithmtd.front().firstMeasurement().updatedState().surface()).second);
 	  }
 	else
 	  {
-	    for (auto it=trajwithmtd.front().measurements().rbegin(); it!=trajwithmtd.front().measurements().rend()-1; ++it) {
-	      
-	      const auto &propresult = propagatorWMa->propagateWithPath(it->updatedState(), (it+1)->updatedState().surface());
-	      double layerpathlength = std::abs(propresult.second);
-	      pathlength1 += layerpathlength;
-	    }
-	    bsToFirst= std::abs(propagatorWMa->propagateWithPath(tscbl.trackStateAtPCA(), trajwithmtd.front().lastMeasurement().updatedState().surface()).second);
+	    for (auto it=trajwithmtd.front().measurements().rbegin(); it!=trajwithmtd.front().measurements().rend()-1; ++it) 
+	      {
+		const auto &propresult = propagatorWMa->propagateWithPath(it->updatedState(), (it+1)->updatedState().surface());
+		double layerpathlength = std::abs(propresult.second);
+		pathlength1 += layerpathlength;
+	      }
+	    bsToFirst1= std::abs(propagatorWMa->propagateWithPath(tscbl.trackStateAtPCA(), trajwithmtd.front().lastMeasurement().updatedState().surface()).second);
 	  }
 
-	std::cout << "bsToFirst " << bsToFirst << std::endl;
-	pathlength1 += bsToFirst ;
-
+	if (trajs.front().direction() == alongMomentum)
+	  {
+	    for (auto it=trajs.front().measurements().begin(); it!=trajs.front().measurements().end()-1; ++it)
+	      {
+		const auto &propresult = propagatorWMa->propagateWithPath(it->updatedState(), (it+1)->updatedState().surface());
+		double layerpathlength = std::abs(propresult.second);
+		pathlength2 += layerpathlength;
+	      }
+	    bsToFirst2 = std::abs(propagatorWMa->propagateWithPath(tscbl_ori.trackStateAtPCA(), trajs.front().firstMeasurement().updatedState().surface()).second);
+	  }
+	else
+	  {
+	    for (auto it=trajs.front().measurements().rbegin(); it!=trajs.front().measurements().rend()-1; ++it)
+	      {
+		const auto &propresult = propagatorWMa->propagateWithPath(it->updatedState(), (it+1)->updatedState().surface());
+		double layerpathlength = std::abs(propresult.second);
+		pathlength2 += layerpathlength;
+	      }
+	    bsToFirst2 = std::abs(propagatorWMa->propagateWithPath(tscbl_ori.trackStateAtPCA(), trajs.front().lastMeasurement().updatedState().surface()).second);
+	  }
+	
 	for (auto it=trajwithmtd.front().measurements().begin(); it!=trajwithmtd.front().measurements().end(); ++it) {
 	  if (it->recHit()->geographicalId().det() == DetId::Forward && ForwardSubdetector(it->recHit()->geographicalId().subdetId()) == FastTime)
 	    {
@@ -715,11 +752,62 @@ void FTLDumpHits::analyze(edm::Event const& event, edm::EventSetup const& setup)
 	      // if (mtdhit->time()<timeAtBTL)
 	      timeAtBTL = mtdhit->time();
 	      std::cout << "timeAtBTL " << timeAtBTL << std::endl; 
+	      if (trajs.front().direction() == alongMomentum )
+		lastToMTD=std::abs(propagatorWMa->propagateWithPath(trajs.front().lastMeasurement().updatedState(), (it)->updatedState().surface()).second);
+	      else
+		lastToMTD=std::abs(propagatorWMa->propagateWithPath(trajs.front().firstMeasurement().updatedState(), (it)->updatedState().surface()).second);
 	    }
 	}
+	
+	std::cout << "bsToFirst1 " << bsToFirst1 << std::endl;
+	std::cout << "bsToFirst2 " << bsToFirst2 << std::endl;
+	std::cout << "lastToMTD "  << lastToMTD << std::endl;
+	pathlength1 += bsToFirst1 ;
+	pathlength2 += bsToFirst2 ;
+	pathlength2 += lastToMTD ;
+	std::cout << "pathLength1 " << pathlength1 << std::endl;
+	std::cout << "pathLength2 " << pathlength2 << std::endl;
+
+	GlobalPoint v = tscbl.trackStateAtPCA().position();
+	refit_pos=math::XYZPoint( v.x(), v.y(), v.z() );
+	GlobalVector p = tscbl.trackStateAtPCA().momentum();
+	refit_mom=math::XYZVector( p.x(), p.y(), p.z() );
+	int ndof = trajs.front().ndof();
+
+	refitTrack = reco::Track(trajs.front().chiSquared(),
+		     int(ndof),//FIXME fix weight() in TrackingRecHit
+		     refit_pos, refit_mom, tscbl.trackStateAtPCA().charge(), 
+		     tscbl.trackStateAtPCA().curvilinearError(),
+		     track.algo(),reco::TrackBase::undefQuality,0,0,1.0,1.0);
+
       }
-    outTree_.track_pathLength-> push_back(pathlength1);
+
+    outTree_.track_pathLength->push_back(pathlength1);
+    outTree_.track_pathLength2->push_back(pathlength2);
     outTree_.track_time_atBTL-> push_back(timeAtBTL);
+
+    if (hasMTD)
+      {
+	outTree_.track_mtdrefit_pt -> push_back(refitTrack.pt());
+	outTree_.track_mtdrefit_p -> push_back(refitTrack.p());
+	outTree_.track_mtdrefit_eta -> push_back(refitTrack.eta());
+	outTree_.track_mtdrefit_phi -> push_back(refitTrack.phi());
+	outTree_.track_mtdrefit_normalizedChi2 -> push_back(refitTrack.normalizedChi2());
+	outTree_.track_mtdrefit_x -> push_back(refitTrack.vx());
+	outTree_.track_mtdrefit_y -> push_back(refitTrack.vy());
+	outTree_.track_mtdrefit_z -> push_back(refitTrack.vz());
+      }
+    else
+      {
+	outTree_.track_mtdrefit_pt -> push_back(0.);
+	outTree_.track_mtdrefit_p -> push_back(0.);
+	outTree_.track_mtdrefit_eta -> push_back(0.);
+	outTree_.track_mtdrefit_phi -> push_back(0.);
+	outTree_.track_mtdrefit_normalizedChi2 -> push_back(0.);
+	outTree_.track_mtdrefit_x -> push_back(0.);
+	outTree_.track_mtdrefit_y -> push_back(0.);
+	outTree_.track_mtdrefit_z -> push_back(0.);
+      }
     /*
     //---get compatible layers
     const vector<const DetLayer*>& layers = layerGeo -> allBTLLayers();
