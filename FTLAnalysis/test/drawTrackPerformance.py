@@ -7,7 +7,7 @@ def goodTrack(evt, itrack , chi2cut):
     #acceptance cuts
     if (evt.track_pt[itrack]<0.7):
         return False
-    if (abs(evt.track_eta[itrack]>3.)):
+    if (abs(evt.track_eta[itrack])>3.):
         return False
     #for the moment use matching with mc gen particle
     if (abs(evt.track_mcMatch_DR[itrack])>0.05):
