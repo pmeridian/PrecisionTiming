@@ -68,7 +68,7 @@ if 'barphi' in options.crysLayout:
     myera=eras.Phase2_timing_layer_bar
 if 'barzflat' in options.crysLayout:
     myera=eras.Phase2C4_timing_layer_bar
-process = cms.Process('MTDRECO',myera)
+process = cms.Process('MTDRERECO',myera)
 
 process.options = cms.untracked.PSet(
     allowUnscheduled = cms.untracked.bool(True),

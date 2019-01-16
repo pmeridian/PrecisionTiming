@@ -3,17 +3,19 @@ import math as M
 import argparse
 import subprocess
 
-def goodTrack(evt, itrack):
+def goodTrack(evt, itrack , chi2cut):
     #acceptance cuts
     if (evt.track_pt[itrack]<0.7):
         return False
-    if (abs(evt.track_eta[itrack])>3.):
+    if (abs(evt.track_eta[itrack]>3.)):
         return False
     #for the moment use matching with mc gen particle
     if (abs(evt.track_mcMatch_DR[itrack])>0.05):
         return False
     if (abs(evt.track_pt[itrack]/evt.track_mcMatch_genPt[itrack]-1.)>0.1):
         return False
+#    if (evt.track_normalizedChi2[itrack] > chi2cut):
+#        return False
 #    if (evt.track_eta_atBTL[itrack]<-100 and evt.track_eta_atETL[itrack]<-100):
 #        return False
     return True
@@ -24,9 +26,10 @@ parser.add_argument('--inputDir',dest='inputDir')
 parser.add_argument('--pattern',dest='pattern')
 parser.add_argument('--output',dest='output')
 parser.add_argument('--layout',dest='layout')
+parser.add_argument('--chi2cut',dest='chi2cut')
 parser.add_argument('--events',dest='events',default='-1')
-parser.add_argument('--dumpHits',dest='dumpHits')
-parser.add_argument('--dumpAll',dest='dumpAll')
+parser.add_argument('--dumpHits',dest='dumpHits',action='store_true',default=False)
+parser.add_argument('--dumpAll',dest='dumpAll',action='store_true',default=False)
 
 args = parser.parse_args()
 
@@ -53,9 +56,10 @@ histos = {}
 
 # time offset introduced in mtd2 due to light collection time (pitch.z()/2 * 7.5ps for bars)
 t_offset={}
-t_offset['ETL']=0.
+t_offset['ETL']=-0.0066
+t_offset['BTL']=0.
 if args.layout == "barzflat":
-    t_offset['BTL']=0.210
+    t_offset['BTL']=0.226875-0.0115
 elif args.layout == "barphi":
     t_offset['BTL']=0.160
 elif args.layout == "tile":
@@ -185,7 +189,7 @@ for ievent,event in enumerate(dh):
                     histos[det+"recHit_time"].Fill(event.recHits_time[ihit])
 
     for itrack in range(0,len(event.track_idx)):
-        if (not goodTrack(event,itrack)):
+        if (not goodTrack(event,itrack,args.chi2cut)):
             continue
 
         histos["track_pt"].Fill(event.track_pt[itrack])

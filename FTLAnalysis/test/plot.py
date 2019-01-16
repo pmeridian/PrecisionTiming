@@ -15,7 +15,8 @@ def Map(tf):
 
 def saveCanvas(c,n):
     defaultTitle(0.1,0.93,args.title)
-    c.SaveAs(args.output+"/"+n+".png")
+    for ext in ['.png','.pdf' ]:
+        c.SaveAs(args.output+"/"+n+ext)
 
 def defaultTitle(x,y,text):
     t=R.TLatex()
