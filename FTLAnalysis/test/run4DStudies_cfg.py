@@ -56,14 +56,15 @@ options.register('nThreads',
 options.maxEvents = -1
 options.parseArguments()
 
-from Configuration.StandardSequences.Eras import eras
-if 'tile' in options.crysLayout:
-    myera=eras.Phase2_timing_layer_tile
-if 'barphi' in options.crysLayout:
-    myera=eras.Phase2_timing_layer_bar
-if 'barzflat' in options.crysLayout:
-    myera=eras.Phase2C4_timing_layer_bar
-process = cms.Process('MTD4DVertexingStudies', myera)
+#from Configuration.StandardSequences.Eras import eras
+#if 'tile' in options.crysLayout:
+#    myera=eras.Phase2_timing_layer_tile
+#if 'barphi' in options.crysLayout:
+#    myera=eras.Phase2_timing_layer_bar
+#if 'barzflat' in options.crysLayout:
+#    myera=eras.Phase2C4_timing_layer_bar
+from Configuration.Eras.Era_Phase2C9_cff import Phase2C9
+process = cms.Process('MTD4DVertexingStudies', Phase2C9)
 
 process.options = cms.untracked.PSet(
     allowUnscheduled = cms.untracked.bool(True),
@@ -78,7 +79,7 @@ process.MessageLogger.cerr.FwkReport.reportEvery = 100
 # Global tag
 process.load('Configuration.StandardSequences.FrontierConditions_GlobalTag_cff')
 from Configuration.AlCa.GlobalTag import GlobalTag
-process.GlobalTag = GlobalTag(process.GlobalTag, 'auto:phase2_realistic', '')
+process.GlobalTag = GlobalTag(process.GlobalTag, 'auto:phase2_realistic_T15', '')
 
 # import of standard configurations
 process.maxEvents = cms.untracked.PSet(
@@ -95,8 +96,8 @@ process.maxEvents = cms.untracked.PSet(
 # if 'barzflat' in options.crysLayout:
 #     process.load('Configuration.Geometry.GeometryExtended2023D35Reco_cff')
 #     process.load('Configuration.Geometry.GeometryExtended2023D35_cff')
-process.load('Configuration.Geometry.GeometryExtended2023D35Reco_cff')
-process.load('Configuration.Geometry.GeometryExtended2023D35_cff')
+process.load('Configuration.Geometry.GeometryExtended2026D49Reco_cff')
+process.load('Configuration.Geometry.GeometryExtended2026D49_cff')
     
 # process.load('Configuration.StandardSequences.SimIdeal_cff')
 
